@@ -1,33 +1,69 @@
 #ifndef BUFRADIXSORT_RELOCATE_H
 #define BUFRADIXSORT_RELOCATE_H
 
-#define BUF DIV(4, BUFFER_SIZE)
 #define TYPE uint32_t
-
-#include "bufradixsort_relocate_casewnd.h"
+#define TYPE_SIZE_LOG 2
+#define TYPE_SIZE 4
 
 #include <stdint.h>
 #include <string.h>
+#if EXT_UNIQID(SSE2) == EXT_UNIQID(EXT_STREAM)
+#include <emmintrin.h>
+#include <smmintrin.h>
+#endif
+#include "bufradixsort_config.h"
+#include "bufradixsort_unroll.h"
 
-static NOINLINE void trick_head(TYPE *copy_point, TYPE *buf_point, unsigned int invalid_elems_cnt) {
-	TYPE *copy_end_point = copy_point+BUF;
-	buf_point += invalid_elems_cnt;
-	copy_point += invalid_elems_cnt;
-	while (copy_point < copy_end_point)
-		*copy_point++ = *buf_point++;
+#define COPYBUF              COPYBUF_HELPER1(EXT_STREAM)
+#define COPYBUF_HELPER1(ext) COPYBUF_HELPER2(ext)
+#define COPYBUF_HELPER2(ext) COPYBUF_EXT_##ext
+
+#define COPYBUF_EXT_NONE() \
+	memcpy(ASSUME_ALIGNED(copy_point, BUFFER_SIZE), ASSUME_ALIGNED(buf_point, BUFFER_SIZE), BUFFER_SIZE)
+
+#define COPYBUF_EXT_SSE2() \
+	ITERNUM(DIV(16, BUFFER_SIZE), COPYBUF_EXT_SSE2_KERNEL)
+#define COPYBUF_EXT_SSE2_KERNEL(n) \
+	_mm_stream_si128((__m128i*)copy_point+n, _mm_load_si128((__m128i*)buf_point+n))
+
+static NOINLINE int relocate_buf_full(unsigned int first_buf_bkt, unsigned char *buf_point, unsigned int bkt,
+		unsigned char **copy_points, unsigned int invalid_elems_offset) {
+	unsigned char *copy_point = copy_points[bkt];
+	copy_points[bkt] = copy_point + BUFFER_SIZE;
+	if (UNLIKELY(bkt == first_buf_bkt)) {
+		unsigned char *copy_end_point = copy_point + BUFFER_SIZE;
+		buf_point += invalid_elems_offset;
+		copy_point += invalid_elems_offset;
+		while (copy_point < copy_end_point)
+			*copy_point++ = *buf_point++;
+		return BKT;
+	} else {
+		EVAL(COPYBUF());
+		return first_buf_bkt;
+	}
 }
 
-static inline void relocate_data(const unsigned char *vdata, const unsigned char *vdata_end, unsigned char *vdest,
-		int bkt_pos, const size_t *histo, unsigned char **vcopy_points) {
-	const TYPE *data = (const TYPE*)vdata;
-	const TYPE *data_end = (const TYPE*)vdata_end;
-	TYPE *dest = (TYPE*)vdest;
-	TYPE **copy_points = (TYPE**)vcopy_points;
+#define RELOCATE_KERNEL() do { \
+	unsigned int bkt = *data_cur; \
+	data_cur += 1 << TYPE_SIZE_LOG; \
+	TYPE val = *(TYPE*)data; \
+	data += 1 << TYPE_SIZE_LOG; \
+	unsigned char *buf_point = buf_points[bkt]; \
+	*(TYPE*)buf_point = val; \
+	buf_point += 1 << TYPE_SIZE_LOG; \
+	if (((uintptr_t)buf_point & (BUFFER_SIZE-1)) == 0) { \
+		buf_point -= BUFFER_SIZE; \
+		first_buf_bkt = relocate_buf_full(first_buf_bkt, buf_point, bkt, copy_points, invalid_elems_offset); \
+	} \
+	buf_points[bkt] = buf_point; \
+} while(0)
 
-	TYPE ALIGNED(BUFFER_SIZE) buf[BKT][BUF];
-	TYPE *buf_points[BKT];
+static inline void relocate_data(const unsigned char *data, const unsigned char *data_end, unsigned char *dest,
+		int bkt_pos, const size_t *histo, unsigned char **copy_points) {
+	unsigned char ALIGNED(BUFFER_SIZE) buf[BKT][BUFFER_SIZE];
+	unsigned char *buf_points[BKT];
 	unsigned int first_buf_bkt = BKT;
-	unsigned int invalid_elems_cnt = 0;
+	unsigned int invalid_elems_offset = 0;
 	unsigned int bkt;
 
 	/*
@@ -37,16 +73,16 @@ static inline void relocate_data(const unsigned char *vdata, const unsigned char
 	 * So we must detect writing to the first position.
 	 */
 	{
-		TYPE* dest_algn = (void*)((uintptr_t)dest & -BUFFER_SIZE);
+		unsigned char *dest_algn = (void*)((uintptr_t)dest & -BUFFER_SIZE);
 		if (dest != dest_algn) {
-			TYPE* dest_algn_up = dest_algn+BUF;
+			unsigned char *dest_algn_up = dest_algn + BUFFER_SIZE;
 			for (bkt = 0; bkt < BKT; bkt++) {
-				TYPE *strt_point = copy_points[bkt];
-				TYPE *ends_point = strt_point+histo[bkt];
+				unsigned char *strt_point = copy_points[bkt];
+				unsigned char *ends_point = strt_point + (histo[bkt] << TYPE_SIZE_LOG);
 				if (ends_point >= dest_algn_up) {
 					if (strt_point < dest_algn_up) {
 						first_buf_bkt = bkt;
-						invalid_elems_cnt = strt_point-dest_algn;
+						invalid_elems_offset = strt_point - dest_algn;
 					}
 					break;
 				}
@@ -59,11 +95,11 @@ static inline void relocate_data(const unsigned char *vdata, const unsigned char
 	 * Copypoints are aligned by the number of elements of a buffer.
 	 */
 	for (bkt = 0; bkt < BKT; bkt++) {
-		TYPE *copy_point = copy_points[bkt];
-		TYPE *copy_point_algn = (void*)((uintptr_t)copy_point & -BUFFER_SIZE);
-		int buf_offset = copy_point-copy_point_algn;
-		copy_points[bkt] = copy_point-buf_offset;
-		buf_points[bkt] = buf[bkt]+buf_offset;
+		unsigned char *copy_point = copy_points[bkt];
+		unsigned char *copy_point_algn = (void*)((uintptr_t)copy_point & -BUFFER_SIZE);
+		int buf_offset = copy_point - copy_point_algn;
+		copy_points[bkt] = copy_point - buf_offset;
+		buf_points[bkt] = buf[bkt] + buf_offset;
 	}
 
 	/*
@@ -71,33 +107,32 @@ static inline void relocate_data(const unsigned char *vdata, const unsigned char
 	 */
 	memset(buf, 0, BKT*BUFFER_SIZE);
 
-	switch (bkt_pos) {
-#define WND 0
-		RELOCATE_CASEWND;
-#undef WND
-#define WND 1
-		RELOCATE_CASEWND;
-#undef WND
-#define WND 2
-		RELOCATE_CASEWND;
-#undef WND
-#define WND 3
-		RELOCATE_CASEWND;
-#undef WND
+	/*
+	 * Run kernel.
+	 */
+	{
+		size_t len = (data_end - data) >> TYPE_SIZE_LOG;
+		const unsigned char *data_end_algn = data_end - (len % UNROLL_RELOCATE << TYPE_SIZE_LOG);
+		const unsigned char *data_cur = data + bkt_pos;
+		while (data < data_end_algn) {
+			PREFETCH(data+128, 0, 0);
+			EVAL(ITER(UNROLL_RELOCATE, RELOCATE_KERNEL));
+		}
+		while (data < data_end) EVAL(RELOCATE_KERNEL());
 	}
 
 #pragma omp barrier
 	for (bkt = 0; bkt < BKT; bkt++) {
-		TYPE *ends_point = copy_points[bkt]+((buf_points[bkt]-buf[bkt]));
-		TYPE *strt_point = ends_point-histo[bkt];
-		TYPE *ends_point_algn = (void*)((uintptr_t)ends_point & -BUFFER_SIZE);
-		TYPE *strt_point_algn = (void*)((uintptr_t)strt_point & -BUFFER_SIZE);
-		TYPE *copy_point;
-		TYPE *buf_point;
+		unsigned char *ends_point = copy_points[bkt] + (buf_points[bkt] - buf[bkt]);
+		unsigned char *strt_point = ends_point - histo[bkt];
+		unsigned char *ends_point_algn = (void*)((uintptr_t)ends_point & -BUFFER_SIZE);
+		unsigned char *strt_point_algn = (void*)((uintptr_t)strt_point & -BUFFER_SIZE);
+		unsigned char *copy_point;
+		unsigned char *buf_point;
 
 		if (strt_point_algn == ends_point_algn) {
 			copy_point = strt_point;
-			buf_point = buf[bkt]+(strt_point-strt_point_algn);
+			buf_point = buf[bkt] + (strt_point - strt_point_algn);
 		} else {
 			copy_point = ends_point_algn;
 			buf_point = buf[bkt];

@@ -26,7 +26,7 @@ int main() {
 	uint32_t *work1 = swork1;
 	uint32_t *work2 = swork2;
 
-	std::srand(LEN+314);
+	std::srand(LEN+3145);
 	for (int round=0; round<2; round++) {
 			for (size_t i = 0; i < LEN; i++) {
 				data[i] = std::rand();
@@ -49,6 +49,8 @@ int main() {
 					std::cout << "bufradix sort fails" << std::endl;
 				}
 			}
+			/*
+			*/
 	}
 
 	/*

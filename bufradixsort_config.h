@@ -40,7 +40,7 @@
 
 /* optimization parameters */
 #ifndef BUFRADIXSORT_USE_SIMD_RELOCATE
-#define BUFRADIXSORT_USE_SIMD_RELOCATE 1
+#define BUFRADIXSORT_USE_SIMD_RELOCATE 0
 #endif
 #ifndef EXT_STREAM
 #define EXT_STREAM SSE2
@@ -52,7 +52,7 @@
 #define UNROLL_RELOCATE 8
 #endif
 #ifndef BUFFER_SIZE
-#define BUFFER_SIZE 128
+#define BUFFER_SIZE 64
 #endif
 
 #define BKT_BIT 8

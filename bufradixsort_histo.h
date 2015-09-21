@@ -7,8 +7,8 @@
 #if CHAR_BIT == BKT_BIT
 
 #define HISTO_KERNEL(ELEM_SIZE_LOG) do { \
-	unsigned char bkt = *datacur; \
-	datacur += 1 << ELEM_SIZE_LOG; \
+	unsigned char bkt = *data_cur; \
+	data_cur += 1 << ELEM_SIZE_LOG; \
 	histo_rst[bkt]++; \
 } while (0)
 
@@ -17,10 +17,10 @@
 	const unsigned char *dataalgn = data; \
 	size_t mod = len % UNROLL_HISTOGRAM; \
 	if (mod) dataalgn += mod << ELEM_SIZE_LOG; \
-	while (datacur < dataalgn) { \
+	while (data_cur < dataalgn) { \
 		HISTO_KERNEL(ELEM_SIZE_LOG); \
 	} \
-	while(datacur < dataend) { \
+	while(data_cur < dataend) { \
 		ITERARG(UNROLL_HISTOGRAM, HISTO_KERNEL, ELEM_SIZE_LOG); \
 		data += UNROLL_HISTOGRAM << ELEM_SIZE_LOG; \
 	} \
@@ -29,7 +29,7 @@
 static inline void count_histo(const unsigned char *data, const unsigned char *dataend,
 		unsigned int elem_size_log, unsigned int bkt_pos, size_t *histo) {
 	size_t *restrict histo_rst = histo; \
-	const unsigned char *restrict datacur = data+bkt_pos; \
+	const unsigned char *restrict data_cur = data+bkt_pos; \
 	switch (elem_size_log) {
 		EVAL(ITERNUM(ELEM_SIZE_LOG_MAX, HISTO_CASE));
 	}
