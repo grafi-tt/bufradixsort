@@ -9,7 +9,7 @@
 #include <iomanip>
 #include <iostream>
 
-#define LEN 8000
+#define LEN 20000000
 
 static uint32_t sdata[LEN];
 static uint32_t swork1[LEN];
@@ -27,28 +27,31 @@ int main() {
 	uint32_t *work2 = swork2;
 
 	std::srand(LEN+314);
-	for (size_t i = 0; i < LEN; i++) {
-		data[i] = std::rand();
+	for (int round=0; round<2; round++) {
+			for (size_t i = 0; i < LEN; i++) {
+				data[i] = std::rand();
+			}
+
+			std::copy(data, data+LEN, work1);
+			gettimeofday(&ts1, NULL);
+			unsigned char elem_order[] = {BUFRADIX_KEY | 0, BUFRADIX_KEY | 1, BUFRADIX_KEY | 2, BUFRADIX_KEY | 3};
+			bufradixsort(work1, work2, LEN, sizeof(uint32_t), elem_order);
+			gettimeofday(&ts2, NULL);
+			std::cout << "bufradixsort" << dt(ts2, ts1) << std::endl;
+
+			gettimeofday(&ts1, NULL);
+			std::sort(data, data+LEN);
+			gettimeofday(&ts2, NULL);
+			std::cout << "std::sort" << dt(ts2, ts1) << std::endl;
+
+			for (size_t i = 0; i < LEN; i++) {
+				if (work1[i] != data[i]) {
+					std::cout << "bufradix sort fails" << std::endl;
+				}
+			}
 	}
 
-	std::copy(data, data+LEN, work1);
-	gettimeofday(&ts1, NULL);
-	unsigned char elem_order[] = {BUFRADIX_KEY | 0, BUFRADIX_KEY | 1, BUFRADIX_KEY | 2, BUFRADIX_KEY | 3};
-	bufradixsort(work1+1, work2+1, LEN-1, sizeof(uint32_t), elem_order);
-	gettimeofday(&ts2, NULL);
-	std::cout << "bufradixsort" << dt(ts2, ts1) << std::endl;
-
-	gettimeofday(&ts1, NULL);
-	std::sort(data+1, data+LEN);
-	gettimeofday(&ts2, NULL);
-	std::cout << "std::sort" << dt(ts2, ts1) << std::endl;
-
-	for (size_t i = 0; i < LEN; i++) {
-		if (work1[i] != data[i]) {
-			std::cout << "bufradix sort fails" << std::endl;
-		}
-	}
-
+	/*
 	std::cout << std::hex;
 	std::cout << "RESULT bufradixsort" << std::endl;
 	for (int i = 0; i < LEN; i++) {
@@ -58,6 +61,7 @@ int main() {
 	for (int i = 0; i < LEN; i++) {
 		std::cout << std::setfill('0') << std::setw(8) << data[i] << std::endl;
 	}
+	*/
 
 	return 0;
 }

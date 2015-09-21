@@ -12,8 +12,6 @@
 #include <sys/time.h>
 #endif
 
-#include <alloca.h>
-
 #ifdef BUFRADIXSORT_DEBUG
 static inline double dt(struct timeval ts2, struct timeval ts1) {
 	return ts2.tv_sec-ts1.tv_sec + (double)(ts2.tv_usec-ts1.tv_usec)/1000000;
@@ -22,7 +20,8 @@ static inline double dt(struct timeval ts2, struct timeval ts1) {
 
 void bufradixsort(void *data, void *work, size_t elem_cnt, unsigned int elem_size, unsigned char *elem_order) {
 	unsigned int elem_size_log;
-	size_t (*all_histo)[BKT] = NULL;
+	size_t acc_histo[BKT];
+	memset(acc_histo, 0, sizeof(size_t[BKT]));
 
 	{
 		elem_size_log = 0; elem_size_log--;
@@ -34,8 +33,9 @@ void bufradixsort(void *data, void *work, size_t elem_cnt, unsigned int elem_siz
 
 #pragma omp parallel
 	{
-		unsigned int tnum = omp_get_num_threads();
-		unsigned int tid = omp_get_thread_num();
+		int tnum = omp_get_num_threads();
+		int tid = omp_get_thread_num();
+		int t;
 
 		size_t histo[BKT];
 		unsigned char *copy_points[BKT];
@@ -45,7 +45,7 @@ void bufradixsort(void *data, void *work, size_t elem_cnt, unsigned int elem_siz
 		size_t from_offset = 0;
 		unsigned char *dest = work;
 
-		unsigned int t, bkt;
+		unsigned int bkt;
 		size_t acc;
 
 		unsigned int round, real_round = 0;
@@ -53,14 +53,9 @@ void bufradixsort(void *data, void *work, size_t elem_cnt, unsigned int elem_siz
 		struct timeval ts1, ts2;
 #endif
 
-		void *space = alloca(tnum*(sizeof(size_t[BKT])));
-#pragma omp master
-		all_histo = space;
-#pragma omp barrier
-
 		{
-			unsigned int quo = elem_cnt / tnum;
-			unsigned int mod = elem_cnt % tnum;
+			size_t quo = elem_cnt / tnum;
+			int mod = elem_cnt % tnum;
 			from_offset = (tid * quo + (tid < mod ? tid : mod)) << elem_size_log;
 			from = data + from_offset;
 			from_end = from + ((quo + (tid < mod)) << elem_size_log);
@@ -83,20 +78,18 @@ void bufradixsort(void *data, void *work, size_t elem_cnt, unsigned int elem_siz
 			printf("histo: bkt_pos %d thread %d seconds %f\n", bkt_pos, omp_get_thread_num(), dt(ts2, ts1));
 #endif
 
-			memcpy(all_histo[tid], histo, sizeof(size_t[BKT]));
-#pragma omp barrier
-			for (bkt = 0; bkt < BKT; bkt++)
-				copy_points[bkt] = dest;
-			for (t = 0; t < tid; t++) {
-				for (bkt = 0, acc = 0; bkt < BKT; bkt++) {
-					acc += all_histo[t][bkt];
-					copy_points[bkt] += acc << elem_size_log;
-				}
+#pragma omp critical
+			for (bkt = 0, acc = 0; bkt < BKT; bkt++) {
+				acc += histo[bkt];
+				acc_histo[bkt] += acc;
 			}
-			for ( ; t < tnum; t++) {
-				for (bkt = 0, acc = 0; bkt < BKT; bkt++) {
-					copy_points[bkt] += acc << elem_size_log;
-					acc += all_histo[t][bkt];
+			for (t = tnum-1; t >= 0; t--) {
+#pragma omp barrier
+				if (t == tid) {
+					for (bkt = 0; bkt < BKT; bkt++) {
+						acc_histo[bkt] -= histo[bkt];
+						copy_points[bkt] = dest + (acc_histo[bkt] << elem_size_log);
+					}
 				}
 			}
 
@@ -109,6 +102,9 @@ void bufradixsort(void *data, void *work, size_t elem_cnt, unsigned int elem_siz
 #pragma omp critical
 			printf("relocate: bkt_pos %d thread %d seconds %f\n", bkt_pos, omp_get_thread_num(), dt(ts2, ts1));
 #endif
+
+#pragma omp single
+			memset(acc_histo, 0, sizeof(size_t[BKT])); /* here is the only safe position to clear acc_histo */
 
 			{
 				size_t mylen = from_end - from;

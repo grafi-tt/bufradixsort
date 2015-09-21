@@ -14,7 +14,7 @@ bufradixsortdebug.o: $(BUFRADIXSORTFILES)
 	gcc $(CFLAGS) -fopenmp -std=c99 -c bufradixsort.c -o $@ -g -DBUFRADIXSORT_DEBUG
 
 bufradixsort.o: $(BUFRADIXSORTFILES)
-	gcc $(CFLAGS) -fopenmp -std=c99 -c bufradixsort.c -o $@ -g -DBUFRADIXSORT_DEBUG
+	gcc $(CFLAGS) -fopenmp -std=c99 -c bufradixsort.c -o $@
 
 .PHONY clean:
 	rm -f *.o bench test
