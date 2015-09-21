@@ -64,8 +64,6 @@ void bufradixsort(void *data, void *work, size_t elem_cnt, unsigned int elem_siz
 			from_offset = (tid * quo + (tid < mod ? tid : mod)) << elem_size_log;
 			from = data + from_offset;
 			from_end = from + ((quo + (tid < mod)) << elem_size_log);
-//#pragma omp critical
-			//printf("hoge %d %ld\n", tid, from_offset);
 		}
 
 		for (round = 0; round < elem_size; round++) {
@@ -85,12 +83,7 @@ void bufradixsort(void *data, void *work, size_t elem_cnt, unsigned int elem_siz
 			printf("histo: bkt_pos %d thread %d seconds %f\n", bkt_pos, omp_get_thread_num(), dt(ts2, ts1));
 #endif
 
-#pragma omp critical
-			for (bkt = 0; bkt < BKT; bkt++) {
-				printf("histo %d %u %lu\n", tid, bkt, histo[bkt]);
-			}
 			memcpy(all_histo[tid], histo, sizeof(size_t[BKT]));
-
 #pragma omp barrier
 			for (bkt = 0; bkt < BKT; bkt++)
 				copy_points[bkt] = dest;
@@ -105,10 +98,6 @@ void bufradixsort(void *data, void *work, size_t elem_cnt, unsigned int elem_siz
 					copy_points[bkt] += acc << elem_size_log;
 					acc += all_histo[t][bkt];
 				}
-			}
-#pragma omp critical
-			for (bkt = 0; bkt < BKT; bkt++) {
-				printf("cp %d %u %lu\n", tid, bkt, copy_points[bkt]-dest);
 			}
 
 #ifdef BUFRADIXSORT_DEBUG
