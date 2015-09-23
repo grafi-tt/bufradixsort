@@ -64,6 +64,16 @@ static NOINLINE int relocate_buf_full(unsigned int first_buf_bkt, unsigned char 
 	buf_points[bkt] = buf_point; \
 } while(0)
 
+#define RELOCATE_CASE(ELEM_SIZE_LOG) case ELEM_SIZE_LOG: { \
+	while (data < data_algn) { \
+		RELOCATE_KERNEL(ELEM_SIZE_LOG); \
+	} \
+	while (data < data_end) { \
+		PREFETCH(data+128, 0, 0); \
+		ITERARG(UNROLL_RELOCATE, RELOCATE_KERNEL, ELEM_SIZE_LOG); \
+	} \
+} break
+
 static void relocate_data(const unsigned char *data, const unsigned char *data_end, unsigned char *dest,
 		unsigned int elem_size_log, unsigned int bkt_pos, const size_t *histo, unsigned char **copy_points) {
 	unsigned char ALIGNED(BUFFER_SIZE) buf[BKT][BUFFER_SIZE];
@@ -121,15 +131,7 @@ static void relocate_data(const unsigned char *data, const unsigned char *data_e
 			((((data_end - data) >> elem_size_log) % UNROLL_RELOCATE) << elem_size_log);
 		const unsigned char *data_cur = data + bkt_pos;
 		switch (elem_size_log) {
-		case 2:
-			while (data < data_algn) {
-				RELOCATE_KERNEL(2);
-			}
-			while (data < data_end) {
-				PREFETCH(data+128, 0, 0);
-				ITERARG(UNROLL_RELOCATE, RELOCATE_KERNEL, 2);
-			}
-			break;
+			ITERNUM(ELEM_SIZE_LOG_MAX, RELOCATE_CASE);
 		}
 	}
 
