@@ -76,7 +76,13 @@ static NOINLINE int relocate_buf_full(unsigned int first_buf_bkt, unsigned char 
 
 static void relocate_data(const unsigned char *data, const unsigned char *data_end, unsigned char *dest,
 		unsigned int elem_size_log, unsigned int bkt_pos, const size_t *histo, unsigned char **copy_points) {
+#ifdef ALIGNED
 	unsigned char ALIGNED(BUFFER_SIZE) buf[BKT][BUFFER_SIZE];
+#else
+	unsigned char buf_space[BKT*(BUFFER_SIZE+1)];
+	unsigned char (*buf)[BUFFER_SIZE] =
+		(unsigned char(*)[BUFFER_SIZE])(buf_space + (-(uintptr_t)buf_space & (BUFFER_SIZE-1)));
+#endif
 	unsigned char *buf_points[BKT];
 	unsigned int first_buf_bkt = BKT;
 	unsigned int invalid_elems_offset = 0;
