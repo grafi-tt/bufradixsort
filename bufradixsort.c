@@ -92,10 +92,10 @@ void bufradixsort(void *data, void *work, size_t elem_cnt, const bufradix_layout
 #define DEBUG_TIME1() gettimeofday(&ts1, NULL)
 #define DEBUG_TIME2() gettimeofday(&ts2, NULL)
 #ifdef _OPENMP
-#define DEBUG_PRINT(str) printf(str": thread %d seconds %f", tid, \
+#define DEBUG_PRINT(str) printf(str": thread %u seconds %f\n", tid, \
 		ts2.tv_sec-ts1.tv_sec + (double)(ts2.tv_usec-ts1.tv_usec)/1000000)
 #else /* _OPENMP */
-#define DEBUG_PRINT(str) printf(str": seconds %f", \
+#define DEBUG_PRINT(str) printf(str": seconds %f\n", \
 		ts2.tv_sec-ts1.tv_sec + (double)(ts2.tv_usec-ts1.tv_usec)/1000000)
 #endif /* _OPENMP */
 
@@ -147,17 +147,10 @@ void bufradixsort(void *data, void *work, size_t elem_cnt, const bufradix_layout
 
 #ifdef _OPENMP
 #pragma omp critical
-#endif
 				for (bkt = 0, acc = 0; bkt < BKT; bkt++) {
-#ifndef _OPENMP
-					copy_points[bkt^bkt_fix_sign] = dest + acc;
-#endif
 					acc += histo[bkt^bkt_fix_sign];
-#ifdef _OPENMP
 					acc_histo[bkt^bkt_fix_sign] += acc;
-#endif
 				}
-#ifdef _OPENMP
 				for (t = tnum-1; t >= 0; t--) {
 #pragma omp barrier
 					if (t == tid) {
@@ -166,6 +159,11 @@ void bufradixsort(void *data, void *work, size_t elem_cnt, const bufradix_layout
 							copy_points[bkt^bkt_fix_sign] = dest + acc_histo[bkt^bkt_fix_sign];
 						}
 					}
+				}
+#else
+				for (bkt = 0, acc = 0; bkt < BKT; bkt++) {
+					copy_points[bkt^bkt_fix_sign] = dest + acc;
+					acc += histo[bkt^bkt_fix_sign];
 				}
 #endif
 
