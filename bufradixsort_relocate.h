@@ -84,7 +84,7 @@ static void relocate_data(const unsigned char *data, const unsigned char *data_e
 			unsigned char *dest_algn_up = dest_algn + BUFFER_SIZE;
 			for (bkt = 0; bkt < BKT; bkt++) {
 				unsigned char *strt_point = copy_points[bkt];
-				unsigned char *ends_point = strt_point + (histo[bkt] << elem_size_log);
+				unsigned char *ends_point = strt_point + histo[bkt];
 				if (ends_point >= dest_algn_up) {
 					if (strt_point < dest_algn_up) {
 						first_buf_bkt = bkt;

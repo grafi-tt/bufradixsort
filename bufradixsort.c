@@ -114,7 +114,6 @@ void bufradixsort(void *data, void *work, size_t elem_cnt, const bufradix_layout
 #ifdef BUFRADIXSORT_DEBUG
 				gettimeofday(&ts1, NULL);
 #endif
-				memset(histo, 0, sizeof(size_t[BKT]));
 				count_histo(from, from_end, elem_size_log, bkt_pos, histo);
 #ifdef BUFRADIXSORT_DEBUG
 				gettimeofday(&ts2, NULL);
@@ -132,7 +131,7 @@ void bufradixsort(void *data, void *work, size_t elem_cnt, const bufradix_layout
 					if (t == tid) {
 						for (bkt = 0; bkt < BKT; bkt++) {
 							acc_histo[bkt] -= histo[bkt];
-							copy_points[bkt] = dest + (acc_histo[bkt] << elem_size_log);
+							copy_points[bkt] = dest + acc_histo[bkt];
 						}
 					}
 				}

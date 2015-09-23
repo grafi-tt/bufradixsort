@@ -9,7 +9,7 @@
 #include <iomanip>
 #include <iostream>
 
-#define LEN 200000
+#define LEN 2000
 
 static uint32_t sdata[LEN];
 static uint32_t swork1[LEN];

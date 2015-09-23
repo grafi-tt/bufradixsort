@@ -5,6 +5,9 @@
 #include "bufradixsort_pp.h"
 
 #include <stddef.h>
+#include <string.h>
+
+#define BKT (1<<BKT_BIT)
 
 #define HISTO_KERNEL(ELEM_SIZE_LOG) do { \
 	unsigned char bkt = *data_cur; \
@@ -28,9 +31,13 @@ static void count_histo(const unsigned char *data, const unsigned char *data_end
 	const unsigned char *data_algn = data +
 		((((data_end - data) >> elem_size_log) % UNROLL_HISTOGRAM) << elem_size_log);
 	const unsigned char *restrict data_cur = data + bkt_pos;
+	unsigned int bkt;
+	memset(histo, 0, sizeof(size_t[BKT]));
 	switch (elem_size_log) {
 		ITERNUM(ELEM_SIZE_LOG_MAX, HISTO_CASE);
 	}
+	for (bkt = 0; bkt < BKT; bkt++)
+		histo[bkt] <<= elem_size_log;
 }
 
 #endif /* BUFRADIXSORT_HISTO_H */
