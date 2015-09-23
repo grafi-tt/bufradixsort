@@ -9,7 +9,7 @@
 #include <iomanip>
 #include <iostream>
 
-#define LEN 20000000
+#define LEN 200000
 
 static uint32_t sdata[LEN];
 static uint32_t swork1[LEN];
@@ -34,8 +34,8 @@ int main() {
 
 			std::copy(data, data+LEN, work1);
 			gettimeofday(&ts1, NULL);
-			unsigned char elem_order[] = {BUFRADIX_KEY | 0, BUFRADIX_KEY | 1, BUFRADIX_KEY | 2, BUFRADIX_KEY | 3};
-			bufradixsort(work1, work2, LEN, sizeof(uint32_t), elem_order);
+			bufradix_layout_t elem_layout[] = {{0, BUFRADIX_LAYOUT_UINT, 32}, {0, BUFRADIX_LAYOUT_END, 0}};
+			bufradixsort(work1, work2, LEN, elem_layout);
 			gettimeofday(&ts2, NULL);
 			std::cout << "bufradixsort" << dt(ts2, ts1) << std::endl;
 

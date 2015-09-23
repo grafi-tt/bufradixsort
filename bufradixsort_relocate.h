@@ -1,18 +1,20 @@
 #ifndef BUFRADIXSORT_RELOCATE_H
 #define BUFRADIXSORT_RELOCATE_H
 
-#define TYPE uint32_t
-#define TYPE_SIZE_LOG 2
-#define TYPE_SIZE 4
+#include "bufradixsort_config.h"
+#include "bufradixsort_pp.h"
 
+#include <limits.h>
+#include <stddef.h>
 #include <stdint.h>
 #include <string.h>
+
 #if EXT_UNIQID(SSE2) == EXT_UNIQID(EXT_STREAM)
 #include <emmintrin.h>
 #include <smmintrin.h>
 #endif
-#include "bufradixsort_config.h"
-#include "bufradixsort_unroll.h"
+
+#define BKT (1<<BKT_BIT)
 
 #define COPYBUF              COPYBUF_HELPER1(EXT_STREAM)
 #define COPYBUF_HELPER1(ext) COPYBUF_HELPER2(ext)
@@ -22,7 +24,7 @@
 	memcpy(ASSUME_ALIGNED(copy_point, BUFFER_SIZE), ASSUME_ALIGNED(buf_point, BUFFER_SIZE), BUFFER_SIZE)
 
 #define COPYBUF_EXT_SSE2() \
-	ITERNUM(DIV(16, BUFFER_SIZE), COPYBUF_EXT_SSE2_KERNEL)
+	ITERNUM(DIV(BUFFER_SIZE, 16), COPYBUF_EXT_SSE2_KERNEL)
 #define COPYBUF_EXT_SSE2_KERNEL(n) \
 	_mm_stream_si128((__m128i*)copy_point+n, _mm_load_si128((__m128i*)buf_point+n))
 
@@ -38,19 +40,23 @@ static NOINLINE int relocate_buf_full(unsigned int first_buf_bkt, unsigned char 
 			*copy_point++ = *buf_point++;
 		return BKT;
 	} else {
-		EVAL(COPYBUF());
+		COPYBUF();
 		return first_buf_bkt;
 	}
 }
 
-#define RELOCATE_KERNEL() do { \
+#define LOG2TYPE(n) LOG2TYPE_HELPER1(MUL(POW(2, n), CHAR_BIT))
+#define LOG2TYPE_HELPER1(bits) LOG2TYPE_HELPER2(bits)
+#define LOG2TYPE_HELPER2(bits) uint##bits##_t
+
+#define RELOCATE_KERNEL(ELEM_SIZE_LOG) do { \
 	unsigned int bkt = *data_cur; \
-	data_cur += 1 << TYPE_SIZE_LOG; \
-	TYPE val = *(TYPE*)data; \
-	data += 1 << TYPE_SIZE_LOG; \
+	data_cur += 1 << ELEM_SIZE_LOG; \
+	LOG2TYPE(ELEM_SIZE_LOG) val = *(LOG2TYPE(ELEM_SIZE_LOG)*)data; \
+	data += 1 << ELEM_SIZE_LOG; \
 	unsigned char *buf_point = buf_points[bkt]; \
-	*(TYPE*)buf_point = val; \
-	buf_point += 1 << TYPE_SIZE_LOG; \
+	*(LOG2TYPE(ELEM_SIZE_LOG)*)buf_point = val; \
+	buf_point += 1 << ELEM_SIZE_LOG; \
 	if (((uintptr_t)buf_point & (BUFFER_SIZE-1)) == 0) { \
 		buf_point -= BUFFER_SIZE; \
 		first_buf_bkt = relocate_buf_full(first_buf_bkt, buf_point, bkt, copy_points, invalid_elems_offset); \
@@ -58,8 +64,8 @@ static NOINLINE int relocate_buf_full(unsigned int first_buf_bkt, unsigned char 
 	buf_points[bkt] = buf_point; \
 } while(0)
 
-static inline void relocate_data(const unsigned char *data, const unsigned char *data_end, unsigned char *dest,
-		int bkt_pos, const size_t *histo, unsigned char **copy_points) {
+static void relocate_data(const unsigned char *data, const unsigned char *data_end, unsigned char *dest,
+		unsigned int elem_size_log, unsigned int bkt_pos, const size_t *histo, unsigned char **copy_points) {
 	unsigned char ALIGNED(BUFFER_SIZE) buf[BKT][BUFFER_SIZE];
 	unsigned char *buf_points[BKT];
 	unsigned int first_buf_bkt = BKT;
@@ -78,7 +84,7 @@ static inline void relocate_data(const unsigned char *data, const unsigned char 
 			unsigned char *dest_algn_up = dest_algn + BUFFER_SIZE;
 			for (bkt = 0; bkt < BKT; bkt++) {
 				unsigned char *strt_point = copy_points[bkt];
-				unsigned char *ends_point = strt_point + (histo[bkt] << TYPE_SIZE_LOG);
+				unsigned char *ends_point = strt_point + (histo[bkt] << elem_size_log);
 				if (ends_point >= dest_algn_up) {
 					if (strt_point < dest_algn_up) {
 						first_buf_bkt = bkt;
@@ -111,14 +117,20 @@ static inline void relocate_data(const unsigned char *data, const unsigned char 
 	 * Run kernel.
 	 */
 	{
-		size_t len = (data_end - data) >> TYPE_SIZE_LOG;
-		const unsigned char *data_end_algn = data_end - (len % UNROLL_RELOCATE << TYPE_SIZE_LOG);
+		const unsigned char *data_algn = data +
+			((((data_end - data) >> elem_size_log) % UNROLL_RELOCATE) << elem_size_log);
 		const unsigned char *data_cur = data + bkt_pos;
-		while (data < data_end_algn) {
-			PREFETCH(data+128, 0, 0);
-			EVAL(ITER(UNROLL_RELOCATE, RELOCATE_KERNEL));
+		switch (elem_size_log) {
+		case 2:
+			while (data < data_algn) {
+				RELOCATE_KERNEL(2);
+			}
+			while (data < data_end) {
+				PREFETCH(data+128, 0, 0);
+				ITERARG(UNROLL_RELOCATE, RELOCATE_KERNEL, 2);
+			}
+			break;
 		}
-		while (data < data_end) EVAL(RELOCATE_KERNEL());
 	}
 
 #pragma omp barrier

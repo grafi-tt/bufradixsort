@@ -1,6 +1,6 @@
 CFLAGS=-Wall -Wextra -O2 -mtune=native -march=native
 
-BUFRADIXSORTFILES=bufradixsort.c bufradixsort.h bufradixsort_config.h bufradixsort_histo.h bufradixsort_relocate.h bufradixsort_relocate_casewnd.h
+BUFRADIXSORTFILES=bufradixsort.c bufradixsort.h bufradixsort_config.h bufradixsort_pp.h bufradixsort_pp_primrec.h bufradixsort_histo.h bufradixsort_relocate.h
 
 all: test
 
