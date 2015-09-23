@@ -7,20 +7,17 @@
 #include <limits.h>
 #include <stdint.h>
 #include <string.h>
-#include <omp.h>
 
-#ifdef BUFRADIXSORT_DEBUG
+#ifdef _OPENMP
+#include <omp.h>
+#endif
+
+#if BUFRADIXSORT_DEBUG
 #include <stdio.h>
 #include <sys/time.h>
 #endif
 
 #define BKT (1<<BKT_BIT)
-
-#ifdef BUFRADIXSORT_DEBUG
-static double dt(struct timeval ts2, struct timeval ts1) {
-	return ts2.tv_sec-ts1.tv_sec + (double)(ts2.tv_usec-ts1.tv_usec)/1000000;
-}
-#endif
 
 static unsigned int correct_position(unsigned int bits, unsigned int pos) {
 	unsigned int i = 0;
@@ -61,33 +58,55 @@ static int check_elem_size(const bufradix_layout_t *elem_layout, unsigned int *e
 
 void bufradixsort(void *data, void *work, size_t elem_cnt, const bufradix_layout_t *elem_layout) {
 	unsigned int elem_size_log;
+#ifdef _OPENMP
 	size_t acc_histo[BKT];
 	memset(acc_histo, 0, sizeof(size_t[BKT]));
+#endif
 	if (check_elem_size(elem_layout, &elem_size_log)) return;
 
+#ifdef _OPENMP
 #pragma omp parallel
+#endif
 	{
+#ifdef _OPENMP
 		int tnum = omp_get_num_threads();
 		int tid = omp_get_thread_num();
 		int t;
+#endif
 
 		size_t histo[BKT];
 		unsigned char *copy_points[BKT];
 
-		unsigned char *from = data;
-		unsigned char *from_end = data;
-		size_t from_offset = 0;
+		unsigned char *from, *from_end;
+		size_t from_offset;
 		unsigned char *dest = work;
 
-		unsigned int bkt;
+		unsigned int bkt, bkt_fix_sign;
 		size_t acc;
 
 		unsigned int order = 0, sort_times = 0;
 		unsigned int bkt_pos_base;
-#ifdef BUFRADIXSORT_DEBUG
-		struct timeval ts1, ts2;
-#endif
 
+#if BUFRADIXSORT_DEBUG
+		struct timeval ts1, ts2;
+#define DEBUG_TIME1() gettimeofday(&ts1, NULL)
+#define DEBUG_TIME2() gettimeofday(&ts2, NULL)
+#ifdef _OPENMP
+#define DEBUG_PRINT(str) printf(str": thread %d seconds %f", tid, \
+		ts2.tv_sec-ts1.tv_sec + (double)(ts2.tv_usec-ts1.tv_usec)/1000000)
+#else /* _OPENMP */
+#define DEBUG_PRINT(str) printf(str": seconds %f", \
+		ts2.tv_sec-ts1.tv_sec + (double)(ts2.tv_usec-ts1.tv_usec)/1000000)
+#endif /* _OPENMP */
+
+#else /* BUFRADIXSORT_DEBUG */
+#define DEBUG_TIME1()
+#define DEBUG_TIME2()
+#define DEBUG_PRINT(str)
+
+#endif /* BUFRADIXSORT_DEBUG */
+
+#ifdef _OPENMP
 		{
 			size_t quo = elem_cnt / tnum;
 			int mod = elem_cnt % tnum;
@@ -95,6 +114,11 @@ void bufradixsort(void *data, void *work, size_t elem_cnt, const bufradix_layout
 			from = data + from_offset;
 			from_end = from + ((quo + (tid < mod)) << elem_size_log);
 		}
+#else
+		from_offset = 0;
+		from = data;
+		from_end = from + (elem_cnt << elem_size_log);
+#endif
 
 		while (1) {
 			const bufradix_layout_t *elem_layout_tmp = elem_layout;
@@ -107,47 +131,56 @@ void bufradixsort(void *data, void *work, size_t elem_cnt, const bufradix_layout
 			if (l.type == BUFRADIX_LAYOUT_END) break;
 			if (l.type == BUFRADIX_LAYOUT_IGNORE) continue;
 			order++, sort_times += l.bits / BKT_BIT;
+			bkt_fix_sign = (l.order == order && (l.type == BUFRADIX_LAYOUT_INT || l.type == BUFRADIX_LAYOUT_FLOAT)) ?
+				(unsigned int)1 << (BKT_BIT-1) : 0;
 
 			for (pos = 0; pos < l.bits / BKT_BIT; pos++) {
 				unsigned int bkt_pos = bkt_pos_base + correct_position(l.bits,  pos);
 
-#ifdef BUFRADIXSORT_DEBUG
-				gettimeofday(&ts1, NULL);
-#endif
+				DEBUG_TIME1();
 				count_histo(from, from_end, elem_size_log, bkt_pos, histo);
-#ifdef BUFRADIXSORT_DEBUG
-				gettimeofday(&ts2, NULL);
+				DEBUG_TIME2();
+#ifdef _OPENMP
 #pragma omp critical
-				printf("histo: bkt_pos %d thread %d seconds %f\n", bkt_pos, omp_get_thread_num(), dt(ts2, ts1));
 #endif
+				DEBUG_PRINT("histo");
 
+#ifdef _OPENMP
 #pragma omp critical
+#endif
 				for (bkt = 0, acc = 0; bkt < BKT; bkt++) {
-					acc += histo[bkt];
-					acc_histo[bkt] += acc;
+#ifndef _OPENMP
+					copy_points[bkt^bkt_fix_sign] = dest + acc;
+#endif
+					acc += histo[bkt^bkt_fix_sign];
+#ifdef _OPENMP
+					acc_histo[bkt^bkt_fix_sign] += acc;
+#endif
 				}
+#ifdef _OPENMP
 				for (t = tnum-1; t >= 0; t--) {
 #pragma omp barrier
 					if (t == tid) {
 						for (bkt = 0; bkt < BKT; bkt++) {
-							acc_histo[bkt] -= histo[bkt];
-							copy_points[bkt] = dest + acc_histo[bkt];
+							acc_histo[bkt^bkt_fix_sign] -= histo[bkt^bkt_fix_sign];
+							copy_points[bkt^bkt_fix_sign] = dest + acc_histo[bkt^bkt_fix_sign];
 						}
 					}
 				}
-
-#ifdef BUFRADIXSORT_DEBUG
-				gettimeofday(&ts1, NULL);
 #endif
-				relocate_data(from, from_end, dest, elem_size_log, bkt_pos, histo, copy_points);
-#ifdef BUFRADIXSORT_DEBUG
-				gettimeofday(&ts2, NULL);
+
+				DEBUG_TIME1();
+				relocate_data(from, from_end, dest, elem_size_log, bkt_pos, bkt_fix_sign, histo, copy_points);
+				DEBUG_TIME2();
+#ifdef _OPENMP
 #pragma omp critical
-				printf("relocate: bkt_pos %d thread %d seconds %f\n", bkt_pos, omp_get_thread_num(), dt(ts2, ts1));
 #endif
+				DEBUG_PRINT("relocate");
 
+#ifdef _OPENMP
 #pragma omp single
 				memset(acc_histo, 0, sizeof(size_t[BKT])); /* here is the only safe position to clear acc_histo */
+#endif
 
 				{
 					size_t mylen = from_end - from;
@@ -156,7 +189,9 @@ void bufradixsort(void *data, void *work, size_t elem_cnt, const bufradix_layout
 					dest = from_end;
 					from_end = from + mylen;
 				}
+#ifdef _OPENMP
 #pragma omp barrier
+#endif
 			}
 		}
 		if (sort_times % 2)

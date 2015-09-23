@@ -75,7 +75,8 @@ static NOINLINE int relocate_buf_full(unsigned int first_buf_bkt, unsigned char 
 } break
 
 static void relocate_data(const unsigned char *data, const unsigned char *data_end, unsigned char *dest,
-		unsigned int elem_size_log, unsigned int bkt_pos, const size_t *histo, unsigned char **copy_points) {
+		unsigned int elem_size_log, unsigned int bkt_pos, unsigned int bkt_fix_sign,
+		const size_t *histo, unsigned char **copy_points) {
 #ifdef ALIGNED
 	unsigned char ALIGNED(BUFFER_SIZE) buf[BKT][BUFFER_SIZE];
 #else
@@ -99,11 +100,11 @@ static void relocate_data(const unsigned char *data, const unsigned char *data_e
 		if (dest != dest_algn) {
 			unsigned char *dest_algn_up = dest_algn + BUFFER_SIZE;
 			for (bkt = 0; bkt < BKT; bkt++) {
-				unsigned char *strt_point = copy_points[bkt];
-				unsigned char *ends_point = strt_point + histo[bkt];
+				unsigned char *strt_point = copy_points[bkt^bkt_fix_sign];
+				unsigned char *ends_point = strt_point + histo[bkt^bkt_fix_sign];
 				if (ends_point >= dest_algn_up) {
 					if (strt_point < dest_algn_up) {
-						first_buf_bkt = bkt;
+						first_buf_bkt = bkt^bkt_fix_sign;
 						invalid_elems_offset = strt_point - dest_algn;
 					}
 					break;
@@ -141,7 +142,9 @@ static void relocate_data(const unsigned char *data, const unsigned char *data_e
 		}
 	}
 
+#ifdef _OPENMP
 #pragma omp barrier
+#endif
 	for (bkt = 0; bkt < BKT; bkt++) {
 		unsigned char *ends_point = copy_points[bkt] + (buf_points[bkt] - buf[bkt]);
 		unsigned char *strt_point = ends_point - histo[bkt];
