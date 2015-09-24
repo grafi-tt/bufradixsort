@@ -8,7 +8,7 @@ test: test.o bufradixsort.o
 	g++ -fopenmp $^ -o $@
 
 test.o: test.cpp bufradixsort.h
-	g++ $(CFLAGS) -fopenmp -c test.cpp -o $@ -g
+	g++ $(CFLAGS) -fopenmp -std=c++11 -c test.cpp -o $@ -g
 
 bufradixsortdebug.o: $(BUFRADIXSORTFILES)
 	gcc $(CFLAGS) -fopenmp -std=c99 -c bufradixsort.c -o $@ -g -DBUFRADIXSORT_DEBUG

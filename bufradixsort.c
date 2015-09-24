@@ -81,7 +81,7 @@ void bufradixsort(void *data, void *work, size_t elem_cnt, const bufradix_layout
 		size_t from_offset;
 		unsigned char *dest = work;
 
-		unsigned int bkt, bkt_fix_sign;
+		unsigned int bkt;
 		size_t acc;
 
 		unsigned int order = 0, sort_times = 0;
@@ -131,11 +131,11 @@ void bufradixsort(void *data, void *work, size_t elem_cnt, const bufradix_layout
 			if (l.type == BUFRADIX_LAYOUT_END) break;
 			if (l.type == BUFRADIX_LAYOUT_IGNORE) continue;
 			order++, sort_times += l.bits / BKT_BIT;
-			bkt_fix_sign = (l.order == order && (l.type == BUFRADIX_LAYOUT_INT || l.type == BUFRADIX_LAYOUT_FLOAT)) ?
-				(unsigned int)1 << (BKT_BIT-1) : 0;
-
 			for (pos = 0; pos < l.bits / BKT_BIT; pos++) {
 				unsigned int bkt_pos = bkt_pos_base + correct_position(l.bits,  pos);
+				unsigned int bkt_fix_sign =
+					(pos+1 == l.bits / BKT_BIT && (l.type == BUFRADIX_LAYOUT_INT || l.type == BUFRADIX_LAYOUT_FLOAT)) ?
+						(unsigned int)1 << (BKT_BIT-1) : 0;
 
 				DEBUG_TIME1();
 				count_histo(from, from_end, elem_size_log, bkt_pos, histo);
@@ -155,8 +155,8 @@ void bufradixsort(void *data, void *work, size_t elem_cnt, const bufradix_layout
 #pragma omp barrier
 					if (t == tid) {
 						for (bkt = 0; bkt < BKT; bkt++) {
-							acc_histo[bkt^bkt_fix_sign] -= histo[bkt^bkt_fix_sign];
-							copy_points[bkt^bkt_fix_sign] = dest + acc_histo[bkt^bkt_fix_sign];
+							acc_histo[bkt] -= histo[bkt];
+							copy_points[bkt] = dest + acc_histo[bkt];
 						}
 					}
 				}
