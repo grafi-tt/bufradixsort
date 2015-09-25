@@ -5,6 +5,7 @@
 #include <iomanip>
 #include <iostream>
 #include <memory>
+#include <random>
 
 template<class A>
 static void print3(A data, A work1, A work2, size_t len) {
