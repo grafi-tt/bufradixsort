@@ -63,7 +63,4 @@
 #define SUPPORTED_FLOAT_BITS_LIST_LEN 2
 #define SUPPORTED_FLOAT_BITS_LIST (32, 64)
 
-/* check whether the config satisfies limitations */
-#include "bufradixsort_config_verify.h"
-
 #endif /* BUFRADIXSORT_CONFIG_H */

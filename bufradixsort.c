@@ -1,6 +1,5 @@
 #include "bufradixsort.h"
-#include "bufradixsort_config.h"
-#include "bufradixsort_pp.h"
+#include "bufradixsort_common.h"
 #include "bufradixsort_histo.h"
 #include "bufradixsort_relocate.h"
 
@@ -17,16 +16,14 @@
 #include <sys/time.h>
 #endif
 
-#define BKT (1<<BKT_BIT)
-
 static unsigned int correct_position(unsigned int bits, unsigned int pos) {
 	unsigned int i = 0;
 	switch (bits) {
 #define CORRECT_POSITION_CASE(BITS) case BITS: { \
-	uint##BITS##_t tester = 0; \
+	UTYP(BITS) tester = 0; \
 	unsigned char *tester_ptr = (unsigned char*)&tester; \
 	for (i = 0; i < BITS / CHAR_BIT; i++) \
-		tester |= (uint##BITS##_t)i << (CHAR_BIT*i); \
+		tester |= (UTYP(BITS))i << (CHAR_BIT*i); \
 	for (i = 0; *tester_ptr != pos; tester_ptr++, i++); \
 } break
 		ITERLIST(SUPPORTED_INT_BITS_LIST_LEN, SUPPORTED_INT_BITS_LIST, CORRECT_POSITION_CASE);
@@ -128,17 +125,23 @@ void bufradixsort(void *data, void *work, size_t elem_cnt, const bufradix_layout
 			bkt_pos_base = 0;
 			while ((l = *elem_layout_tmp++).type != BUFRADIX_LAYOUT_END && l.order != order)
 				bkt_pos_base += l.bits / BKT_BIT;
+
 			if (l.type == BUFRADIX_LAYOUT_END) break;
 			if (l.type == BUFRADIX_LAYOUT_IGNORE) continue;
 			order++, sort_times += l.bits / BKT_BIT;
+
 			for (pos = 0; pos < l.bits / BKT_BIT; pos++) {
-				unsigned int bkt_pos = bkt_pos_base + correct_position(l.bits,  pos);
+				unsigned int real_pos = correct_position(l.bits,  pos);
 				unsigned int bkt_fix_sign =
 					(pos+1 == l.bits / BKT_BIT && (l.type == BUFRADIX_LAYOUT_INT || l.type == BUFRADIX_LAYOUT_FLOAT)) ?
-						(unsigned int)1 << (BKT_BIT-1) : 0;
+						1u << (BKT_BIT-1) : 0;
+				unsigned int float_bits_if_lsb =
+					(pos == 0 && l.type == BUFRADIX_LAYOUT_FLOAT) ? l.bits : 0;
+				unsigned int float_bits_if_msb =
+					(pos+1 == l.bits / BKT_BIT && l.type == BUFRADIX_LAYOUT_FLOAT) ? l.bits : 0;
 
 				DEBUG_TIME1();
-				count_histo(from, from_end, elem_size_log, bkt_pos, histo);
+				count_histo(from, from_end, elem_size_log, bkt_pos_base, real_pos, float_bits_if_lsb, histo);
 				DEBUG_TIME2();
 #ifdef _OPENMP
 #pragma omp critical
@@ -168,7 +171,8 @@ void bufradixsort(void *data, void *work, size_t elem_cnt, const bufradix_layout
 #endif
 
 				DEBUG_TIME1();
-				relocate_data(from, from_end, dest, elem_size_log, bkt_pos, bkt_fix_sign, histo, copy_points);
+				relocate_data(from, from_end, dest,
+						elem_size_log, bkt_pos_base, real_pos, float_bits_if_msb, bkt_fix_sign, histo, copy_points);
 				DEBUG_TIME2();
 #ifdef _OPENMP
 #pragma omp critical

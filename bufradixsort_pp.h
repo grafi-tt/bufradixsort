@@ -3,14 +3,14 @@
 
 #include "bufradixsort_pp_primrec.h"
 
-#define SPLAT8(x1, x2, x3, x4, x5, x6, x7, x8) x1, x2, x3, x4, x5, x6, x7, x8
-#define SPLAT7(x1, x2, x3, x4, x5, x6, x7)     x1, x2, x3, x4, x5, x6, x7
-#define SPLAT6(x1, x2, x3, x4, x5, x6)         x1, x2, x3, x4, x5, x6
-#define SPLAT5(x1, x2, x3, x4, x5)             x1, x2, x3, x4, x5
-#define SPLAT4(x1, x2, x3, x4)                 x1, x2, x3, x4
-#define SPLAT3(x1, x2, x3)                     x1, x2, x3
-#define SPLAT2(x1, x2)                         x1, x2
-#define SPLAT1(x1)                             x1
+/* tuple */
+#define FST(tuple) FST_EVAL(FST_HELPER tuple)
+#define FST_EVAL(helper_tuple) helper_tuple
+#define FST_HELPER(fst, snd) fst
+
+#define SND(tuple) SND_EVAL(SND_HELPER tuple)
+#define SND_EVAL(helper_tuple) helper_tuple
+#define SND_HELPER(fst, snd) snd
 
 /* arith */
 #define ADD(n, m) ADD_E(PRIMREC(m, ADD_F, ADD_G, n))
@@ -46,23 +46,33 @@
 #define IF0(n, x, y) IF0_E(PRIMREC(n, IF0_F, IF0_G, (x, y)))
 #define IF0_E(x) IF0_EE(IF0_EE(x))
 #define IF0_EE(x) x
-#define IF0_F(xy) IF0_F_HELPER1(SPLAT2 xy)
-#define IF0_F_HELPER1(splat_xy) IF0_F_HELPER2(splat_xy)
-#define IF0_F_HELPER2(x, y) x
-#define IF0_G(n, xy, _) IF0_G_HELPER1(SPLAT2 xy)
-#define IF0_G_HELPER1(splat_xy) IF0_G_HELPER2(splat_xy)
-#define IF0_G_HELPER2(x, y) y
+#define IF0_F(xy) FST(xy)
+#define IF0_G(n, xy, _) SND(xy)
 
-#define DIV(n, m) DIV_HELPER1(DIV_E(PRIMREC(n, DIV_F, DIV_G, m)))
-#define DIV_HELPER1(qr) DIV_HELPER2(SPLAT2 qr)
-#define DIV_HELPER2(splat_qr) DIV_HELPER3(splat_qr)
-#define DIV_HELPER3(q, r) q
+#define DIV(n, m) FST(DIV_E(PRIMREC(n, DIV_F, DIV_G, m)))
 #define DIV_E(x) DIV_EE(DIV_EE(x))
 #define DIV_EE(x) x
 #define DIV_F(m) (0, PRED(m))
-#define DIV_G(i, m, qr) DIV_G_HELPER1(i, m, SPLAT2 qr)
-#define DIV_G_HELPER1(i, m, splat_qr) DIV_G_HELPER2(i, m, splat_qr)
-#define DIV_G_HELPER2(i, m, q, r) IF0(r, (SUCC(q), PRED(m)), (q, PRED(r)))
+#define DIV_G(i, m, qr) IF0(SND(qr), (SUCC(FST(qr)), PRED(m)), (FST(qr), PRED(SND(qr))))
+
+/* list */
+#define DECONS(len, list) DECONS_EVAL(DECONS_HELPER(len, list))
+#define DECONS_EVAL(x) x
+#define DECONS_HELPER(len, list) DECONS_##len list
+#define DECONS_8(x1, x2, x3, x4, x5, x6, x7, x8) (x1, (x2, x3, x4, x5, x6, x7, x8))
+#define DECONS_7(x1, x2, x3, x4, x5, x6, x7)     (x1, (x2, x3, x4, x5, x6, x7))
+#define DECONS_6(x1, x2, x3, x4, x5, x6)         (x1, (x2, x3, x4, x5, x6))
+#define DECONS_5(x1, x2, x3, x4, x5)             (x1, (x2, x3, x4, x5))
+#define DECONS_4(x1, x2, x3, x4)                 (x1, (x2, x3, x4))
+#define DECONS_3(x1, x2, x3)                     (x1, (x2, x3))
+#define DECONS_2(x1, x2)                         (x1, (x2))
+#define DECONS_1(x1)                             (x1, ())
+
+#define INDEX(i, len, list) FST(SND(INDEX_E(PRIMREC(i, INDEX_F,INDEX_G, (len, list)))))
+#define INDEX_E(x) INDEX_EE(INDEX_EE(x))
+#define INDEX_EE(x) x
+#define INDEX_F(len_list) (PRED(FST(len_list)), DECONS(FST(len_list), SND(len_list)))
+#define INDEX_G(i, _, len_head_list) (PRED(FST(len_head_list)), DECONS(FST(len_head_list), SND(SND(len_head_list))))
 
 /* unrolling */
 #define ITER(n, code) do { ITER_E(PRIMREC(n, ITER_F, ITER_G, code)) } while(0)
@@ -81,20 +91,28 @@
 #define ITERARG_E(x) ITERARG_EE(ITERARG_EE(x))
 #define ITERARG_EE(x) x
 #define ITERARG_F(code_arg)
-#define ITERARG_G(n, code_arg, rec) ITERARG_G_HELPER1(SPLAT2 code_arg, rec)
-#define ITERARG_G_HELPER1(splat_code_arg, rec) ITERARG_G_HELPER2(splat_code_arg, rec)
-#define ITERARG_G_HELPER2(code, arg, rec) rec code(arg);
+#define ITERARG_G(n, code_arg, rec) rec FST(code_arg)(SND(code_arg));
 
-#define ITERLIST(listlen, list, code) ITERLIST_HELPER1(listlen, list, code)
-#define ITERLIST_HELPER1(listlen, list, code) ITERLIST_HELPER2(listlen, code, SPLAT##listlen list)
-#define ITERLIST_HELPER2(listlen, code, splat_list) do { ITERLIST_##listlen(code, splat_list) } while(0)
-#define ITERLIST_8(code, a1, a2, a3, a4, a5, a6, a7, a8) code(a1); ITERLIST_7(code, a2, a3, a4, a5, a6, a7, a8)
-#define ITERLIST_7(code, a1, a2, a3, a4, a5, a6, a7)     code(a1); ITERLIST_6(code, a2, a3, a4, a5, a6, a7)
-#define ITERLIST_6(code, a1, a2, a3, a4, a5, a6)         code(a1); ITERLIST_5(code, a2, a3, a4, a5, a6)
-#define ITERLIST_5(code, a1, a2, a3, a4, a5)             code(a1); ITERLIST_4(code, a2, a3, a4, a5)
-#define ITERLIST_4(code, a1, a2, a3, a4)                 code(a1); ITERLIST_3(code, a2, a3, a4)
-#define ITERLIST_3(code, a1, a2, a3)                     code(a1); ITERLIST_2(code, a2, a3)
-#define ITERLIST_2(code, a1, a2)                         code(a1); ITERLIST_1(code, a2)
-#define ITERLIST_1(code, a1)                             code(a1);
+#define ITERNUMARG(n, code, arg) do { ITERNUMARG_E(PRIMREC(n, ITERNUMARG_F, ITERNUMARG_G, (code, arg))) } while(0)
+#define ITERNUMARG_E(x) ITERNUMARG_EE(ITERNUMARG_EE(x))
+#define ITERNUMARG_EE(x) x
+#define ITERNUMARG_F(code_arg)
+#define ITERNUMARG_G(n, code_arg, rec) rec FST(code_arg)(n, SND(code_arg));
+
+#define ITERLIST(len, list, code) \
+	do { ITERLIST_E(PRIMREC(len, ITERLIST_F, ITERLIST_G, (code, (len, list)))) } while(0)
+#define ITERLIST_E(x) ITERLIST_EE(ITERLIST_EE(x))
+#define ITERLIST_EE(x) x
+#define ITERLIST_F(code_len_list)
+#define ITERLIST_G(n, code_len_list, rec) rec FST(code_len_list) \
+	(INDEX(n, FST(SND(code_len_list)), SND(SND(code_len_list))));
+
+#define ITERLISTARG(len, list, code, arg) \
+	do { ITERLISTARG_E(PRIMREC(len, ITERLISTARG_F, ITERLISTARG_G, ((code, arg), (len, list)))) } while(0)
+#define ITERLISTARG_E(x) ITERLISTARG_EE(ITERLISTARG_EE(x))
+#define ITERLISTARG_EE(x) x
+#define ITERLISTARG_F(code_arg_len_list)
+#define ITERLISTARG_G(n, code_arg_len_list, rec) rec FST(FST(code_arg_len_list)) \
+	(INDEX(n, FST(SND(code_arg_len_list)), SND(SND(code_arg_len_list))), SND(FST(code_arg_len_list)));
 
 #endif /* BUFRADIXSORT_PP_H */
