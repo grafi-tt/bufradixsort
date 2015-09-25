@@ -75,7 +75,7 @@ static void count_histo(unsigned char *data, unsigned char *data_end,
 	unsigned int bkt;
 	memset(histo, 0, sizeof(size_t[BKT]));
 	switch (elem_size_log) {
-		ITERNUM(ELEM_SIZE_LOG_MAX, HISTO_CASE_E);
+		ITERNUM(SUCC(ELEM_SIZE_LOG_MAX), HISTO_CASE_E);
 	}
 	for (bkt = 0; bkt < BKT; bkt++)
 		histo[bkt] <<= elem_size_log;

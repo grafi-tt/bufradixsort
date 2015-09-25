@@ -185,7 +185,7 @@ static void relocate_data(const unsigned char *data, const unsigned char *data_e
 		const unsigned char *data_algn = data +
 			((((data_end - data) >> elem_size_log) % UNROLL_RELOCATE) << elem_size_log);
 		switch (elem_size_log) {
-			ITERNUM(ELEM_SIZE_LOG_MAX, RELOCATE_CASE_E);
+			ITERNUM(SUCC(ELEM_SIZE_LOG_MAX), RELOCATE_CASE_E);
 		}
 	}
 
