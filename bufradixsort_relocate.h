@@ -13,7 +13,10 @@
 #include <smmintrin.h>
 #endif
 
-#define RELOCATE_FLOAT_KERNEL(ELEM_SIZE_LOG, FLOAT_BITS) do { \
+/*
+ * If it is MSB of a float, negate non-sign buckets if the sign is minus.
+ */
+#define RELOCATE_FLOAT_KERNEL(ELEM_SIZE_LOG) do { \
 	unsigned int bkt = *data_cur; \
 	data_cur += 1 << ELEM_SIZE_LOG; \
 	LOGUTYP(ELEM_SIZE_LOG) val = *(LOGUTYP(ELEM_SIZE_LOG)*)data; \
@@ -28,7 +31,7 @@
 	buf_points[bkt] = buf_point; \
 } while(0)
 
-#define RELOCATE_FLOAT_CASE_E(ELEM_SIZE_LOG, FLOAT_BITS) case ELEM_SIZE_LOG: { \
+#define RELOCATE_FLOAT_CASE_F_DO(FLOAT_BITS, ELEM_SIZE_LOG) case FLOAT_BITS: { \
 	const unsigned char *restrict data_cur = data + bkt_pos_base + real_pos; \
 	LOGUTYP(ELEM_SIZE_LOG) float_fix = \
 		(((LOGUTYP(ELEM_SIZE_LOG))1 << (FLOAT_BITS-1))-1) << (((1 << ELEM_SIZE_LOG) - bkt_pos_base) * BKT_BIT); \
@@ -37,20 +40,23 @@
 	for (i = ELEM_SIZE_LOG; i < ELEM_SIZE_LOG_MAX; i++) \
 		float_fixes |= float_fixes << ((1 << i) * BKT_BIT); \
 	while (data < data_algn) { \
-		RELOCATE_KERNEL(ELEM_SIZE_LOG); \
+		RELOCATE_FLOAT_KERNEL(ELEM_SIZE_LOG); \
 	} \
 	while (data < data_end) { \
 		PREFETCH(data+128, 0, 0); \
-		ITERARG(UNROLL_RELOCATE, RELOCATE_KERNEL, ELEM_SIZE_LOG); \
+		ITERARG(UNROLL_RELOCATE, RELOCATE_FLOAT_KERNEL, ELEM_SIZE_LOG); \
 	} \
 } break
 
-#define RELOCATE_FLOAT_CASE_F(FLOAT_BITS) case FLOAT_BITS: { \
-	switch (elem_size_log) { \
-		ITERNUMARG(ELEM_SIZE_LOG_MAX, RELOCATE_FLOAT_CASE_E, FLOAT_BITS); \
-	} \
-} break
+#define RELOCATE_FLOAT_CASE_F_EMP(FLOAT_BITS) case FLOAT_BITS:
 
+#define RELOCATE_FLOAT_CASE_F(FLOAT_BITS, ELEM_SIZE_LOG) \
+	IF0(SUB(DIV(FLOAT_BITS, BKT_BIT), POW(2, ELEM_SIZE_LOG)), \
+		RELOCATE_FLOAT_CASE_F_DO(FLOAT_BITS, ELEM_SIZE_LOG), RELOCATE_FLOAT_CASE_F_EMP(FLOAT_BITS))
+
+/*
+ * Otherwise, simply relocate.
+ */
 #define COPYBUF              COPYBUF_HELPER1(EXT_STREAM)
 #define COPYBUF_HELPER1(ext) COPYBUF_HELPER2(ext)
 #define COPYBUF_HELPER2(ext) COPYBUF_EXT_##ext
@@ -80,7 +86,7 @@ static NOINLINE int relocate_buf_full(unsigned int first_buf_bkt, unsigned char 
 	}
 }
 
-#define RELOCATE_KERNEL(ELEM_SIZE_LOG) do { \
+#define RELOCATE_NONFLOAT_KERNEL(ELEM_SIZE_LOG) do { \
 	unsigned int bkt = *data_cur; \
 	data_cur += 1 << ELEM_SIZE_LOG; \
 	LOGUTYP(ELEM_SIZE_LOG) val = *(LOGUTYP(ELEM_SIZE_LOG)*)data; \
@@ -95,22 +101,26 @@ static NOINLINE int relocate_buf_full(unsigned int first_buf_bkt, unsigned char 
 	buf_points[bkt] = buf_point; \
 } while(0)
 
-#define RELOCATE_CASE_E(ELEM_SIZE_LOG) case ELEM_SIZE_LOG: { \
+#define RELOCATE_NONFLOAT_CASE_F(ELEM_SIZE_LOG) default: { \
 	const unsigned char *restrict data_cur = data + bkt_pos_base + real_pos; \
 	while (data < data_algn) { \
-		RELOCATE_KERNEL(ELEM_SIZE_LOG); \
+		RELOCATE_NONFLOAT_KERNEL(ELEM_SIZE_LOG); \
 	} \
 	while (data < data_end) { \
 		PREFETCH(data+128, 0, 0); \
-		ITERARG(UNROLL_RELOCATE, RELOCATE_KERNEL, ELEM_SIZE_LOG); \
+		ITERARG(UNROLL_RELOCATE, RELOCATE_NONFLOAT_KERNEL, ELEM_SIZE_LOG); \
 	} \
 } break
 
-#define RELOCATE_CASE_F() default: { \
-	switch (elem_size_log) { \
-		ITERNUM(ELEM_SIZE_LOG_MAX, RELOCATE_CASE_E); \
+/*
+ * Generic part.
+ */
+#define RELOCATE_CASE_E(ELEM_SIZE_LOG) case ELEM_SIZE_LOG: { \
+	switch (float_bits_if_msb) { \
+		ITERLISTARG(SUPPORTED_FLOAT_BITS_LIST_LEN, SUPPORTED_FLOAT_BITS_LIST, RELOCATE_FLOAT_CASE_F, ELEM_SIZE_LOG); \
+		RELOCATE_NONFLOAT_CASE_F(ELEM_SIZE_LOG); \
 	} \
-} break
+}
 
 static void relocate_data(const unsigned char *data, const unsigned char *data_end, unsigned char *dest,
 		unsigned int elem_size_log, unsigned int bkt_pos_base, unsigned int real_pos, unsigned int float_bits_if_msb,
@@ -174,9 +184,8 @@ static void relocate_data(const unsigned char *data, const unsigned char *data_e
 	{
 		const unsigned char *data_algn = data +
 			((((data_end - data) >> elem_size_log) % UNROLL_RELOCATE) << elem_size_log);
-		switch (float_bits_if_msb) {
-			ITERLIST(SUPPORTED_FLOAT_BITS_LIST_LEN, SUPPORTED_FLOAT_BITS_LIST, RELOCATE_FLOAT_CASE_F);
-			RELOCATE_CASE_F();
+		switch (elem_size_log) {
+			ITERNUM(ELEM_SIZE_LOG_MAX, RELOCATE_CASE_E);
 		}
 	}
 
