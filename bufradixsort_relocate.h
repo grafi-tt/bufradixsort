@@ -19,36 +19,37 @@
 #define RELOCATE_FLOAT_KERNEL(ELEM_SIZE_LOG) do { \
 	unsigned int bkt = *data_cur; \
 	data_cur += 1 << ELEM_SIZE_LOG; \
-	LOGUTYP(ELEM_SIZE_LOG) val = *(LOGUTYP(ELEM_SIZE_LOG)*)data; \
-	data += 1 << ELEM_SIZE_LOG; \
-	unsigned char *buf_point = buf_points[bkt]; \
-	*(LOGUTYP(ELEM_SIZE_LOG)*)buf_point = val; \
-	buf_point += 1 << ELEM_SIZE_LOG; \
-	if (((uintptr_t)buf_point & (BUFFER_SIZE-1)) == 0) { \
-		buf_point -= BUFFER_SIZE; \
-		first_buf_bkt = relocate_buf_full(first_buf_bkt, buf_point, bkt, copy_points, invalid_elems_offset); \
+	LOGUTYP(ELEM_SIZE_LOG) val; \
+	memcpy(&val, data_rst, sizeof(val)); \
+	data_rst += 1 << ELEM_SIZE_LOG; \
+	unsigned char *buf_point_rst = buf_points_rst[bkt]; \
+	memcpy(buf_point_rst, &val, sizeof(val)); \
+	buf_point_rst += 1 << ELEM_SIZE_LOG; \
+	if (((uintptr_t)buf_point_rst & (BUFFER_SIZE-1)) == 0) { \
+		buf_point_rst -= BUFFER_SIZE; \
+		first_buf_bkt = relocate_buf_full(first_buf_bkt, buf_point_rst, bkt, copy_points_rst, invalid_elems_offset); \
 	} \
-	buf_points[bkt] = buf_point; \
+	buf_points_rst[bkt] = buf_point_rst; \
 } while(0)
 
 #define RELOCATE_FLOAT_CASE_F_DO(FLOAT_BITS, ELEM_SIZE_LOG) case FLOAT_BITS: { \
-	const unsigned char *restrict data_cur = data + bkt_pos_base + real_pos; \
+	const unsigned char *data_cur = data_rst + bkt_pos_base + real_pos; \
 	LOGUTYP(ELEM_SIZE_LOG) float_fix = \
 		(((LOGUTYP(ELEM_SIZE_LOG))1 << (FLOAT_BITS-1))-1) << (((1 << ELEM_SIZE_LOG) - bkt_pos_base) * BKT_BIT); \
 	LOGUTYP(ELEM_SIZE_LOG_MAX) float_fixes = float_fix; \
 	int i; \
 	for (i = ELEM_SIZE_LOG; i < ELEM_SIZE_LOG_MAX; i++) \
 		float_fixes |= float_fixes << ((1 << i) * BKT_BIT); \
-	while (data < data_algn) { \
+	while (data_rst < data_algn) { \
 		RELOCATE_FLOAT_KERNEL(ELEM_SIZE_LOG); \
 	} \
-	while (data < data_end) { \
-		PREFETCH(data+128, 0, 0); \
+	while (data_rst < data_end) { \
+		PREFETCH(data_rst+128, 0, 0); \
 		ITERARG(UNROLL_RELOCATE, RELOCATE_FLOAT_KERNEL, ELEM_SIZE_LOG); \
 	} \
 } break
 
-#define RELOCATE_FLOAT_CASE_F_EMP(FLOAT_BITS) case FLOAT_BITS:
+#define RELOCATE_FLOAT_CASE_F_EMP(FLOAT_BITS)
 
 #define RELOCATE_FLOAT_CASE_F(FLOAT_BITS, ELEM_SIZE_LOG) \
 	IF0(SUB(DIV(FLOAT_BITS, BKT_BIT), POW(2, ELEM_SIZE_LOG)), \
@@ -62,23 +63,23 @@
 #define COPYBUF_HELPER2(ext) COPYBUF_EXT_##ext
 
 #define COPYBUF_EXT_NONE() \
-	memcpy(ASSUME_ALIGNED(copy_point, BUFFER_SIZE), ASSUME_ALIGNED(buf_point, BUFFER_SIZE), BUFFER_SIZE)
+	memcpy(ASSUME_ALIGNED(copy_point_rst, BUFFER_SIZE), ASSUME_ALIGNED(buf_point_rst, BUFFER_SIZE), BUFFER_SIZE)
 
 #define COPYBUF_EXT_SSE2() \
 	ITERNUM(DIV(BUFFER_SIZE, 16), COPYBUF_EXT_SSE2_KERNEL)
 #define COPYBUF_EXT_SSE2_KERNEL(n) \
-	_mm_stream_si128((__m128i*)copy_point+n, _mm_load_si128((__m128i*)buf_point+n))
+	_mm_stream_si128((__m128i*)copy_point_rst+n, _mm_load_si128((__m128i*)buf_point_rst+n))
 
-static NOINLINE int relocate_buf_full(unsigned int first_buf_bkt, unsigned char *buf_point, unsigned int bkt,
-		unsigned char **copy_points, unsigned int invalid_elems_offset) {
-	unsigned char *copy_point = copy_points[bkt];
-	copy_points[bkt] = copy_point + BUFFER_SIZE;
+static NOINLINE int relocate_buf_full(unsigned int first_buf_bkt, unsigned char *restrict buf_point_rst,
+		unsigned int bkt, unsigned char *restrict *restrict copy_points_rst, unsigned int invalid_elems_offset) {
+	unsigned char *copy_point_rst = copy_points_rst[bkt];
+	copy_points_rst[bkt] = copy_point_rst + BUFFER_SIZE;
 	if (UNLIKELY(bkt == first_buf_bkt)) {
-		unsigned char *copy_end_point = copy_point + BUFFER_SIZE;
-		buf_point += invalid_elems_offset;
-		copy_point += invalid_elems_offset;
-		while (copy_point < copy_end_point)
-			*copy_point++ = *buf_point++;
+		unsigned char *copy_end_point = copy_point_rst + BUFFER_SIZE;
+		buf_point_rst += invalid_elems_offset;
+		copy_point_rst += invalid_elems_offset;
+		while (copy_point_rst < copy_end_point)
+			*copy_point_rst++ = *buf_point_rst++;
 		return BKT;
 	} else {
 		COPYBUF();
@@ -89,25 +90,26 @@ static NOINLINE int relocate_buf_full(unsigned int first_buf_bkt, unsigned char 
 #define RELOCATE_NONFLOAT_KERNEL(ELEM_SIZE_LOG) do { \
 	unsigned int bkt = *data_cur; \
 	data_cur += 1 << ELEM_SIZE_LOG; \
-	LOGUTYP(ELEM_SIZE_LOG) val = *(LOGUTYP(ELEM_SIZE_LOG)*)data; \
-	data += 1 << ELEM_SIZE_LOG; \
-	unsigned char *buf_point = buf_points[bkt]; \
-	*(LOGUTYP(ELEM_SIZE_LOG)*)buf_point = val; \
-	buf_point += 1 << ELEM_SIZE_LOG; \
-	if (((uintptr_t)buf_point & (BUFFER_SIZE-1)) == 0) { \
-		buf_point -= BUFFER_SIZE; \
-		first_buf_bkt = relocate_buf_full(first_buf_bkt, buf_point, bkt, copy_points, invalid_elems_offset); \
+	LOGUTYP(ELEM_SIZE_LOG) val; \
+	memcpy(&val, (LOGUTYP(ELEM_SIZE_LOG)*)data_rst, sizeof(val)); \
+	data_rst += 1 << ELEM_SIZE_LOG; \
+	unsigned char *restrict buf_point_rst = buf_points_rst[bkt]; \
+	memcpy((LOGUTYP(ELEM_SIZE_LOG)*)buf_point_rst, &val, sizeof(val)); \
+	buf_point_rst += 1 << ELEM_SIZE_LOG; \
+	if (((uintptr_t)buf_point_rst & (BUFFER_SIZE-1)) == 0) { \
+		buf_point_rst -= BUFFER_SIZE; \
+		first_buf_bkt = relocate_buf_full(first_buf_bkt, buf_point_rst, bkt, copy_points_rst, invalid_elems_offset); \
 	} \
-	buf_points[bkt] = buf_point; \
+	buf_points_rst[bkt] = buf_point_rst; \
 } while(0)
 
 #define RELOCATE_NONFLOAT_CASE_F(ELEM_SIZE_LOG) default: { \
-	const unsigned char *restrict data_cur = data + bkt_pos_base + real_pos; \
-	while (data < data_algn) { \
+	const unsigned char *data_cur = data_rst + bkt_pos_base + real_pos; \
+	while (data_rst < data_algn) { \
 		RELOCATE_NONFLOAT_KERNEL(ELEM_SIZE_LOG); \
 	} \
-	while (data < data_end) { \
-		PREFETCH(data+128, 0, 0); \
+	while (data_rst < data_end) { \
+		PREFETCH(data_rst+128, 0, 0); \
 		ITERARG(UNROLL_RELOCATE, RELOCATE_NONFLOAT_KERNEL, ELEM_SIZE_LOG); \
 	} \
 } break
@@ -120,7 +122,7 @@ static NOINLINE int relocate_buf_full(unsigned int first_buf_bkt, unsigned char 
 		ITERLISTARG(SUPPORTED_FLOAT_BITS_LIST_LEN, SUPPORTED_FLOAT_BITS_LIST, RELOCATE_FLOAT_CASE_F, ELEM_SIZE_LOG); \
 		RELOCATE_NONFLOAT_CASE_F(ELEM_SIZE_LOG); \
 	} \
-}
+} break
 
 static void relocate_data(const unsigned char *data, const unsigned char *data_end, unsigned char *dest,
 		unsigned int elem_size_log, unsigned int bkt_pos_base, unsigned int real_pos, unsigned int float_bits_if_msb,
@@ -174,14 +176,12 @@ static void relocate_data(const unsigned char *data, const unsigned char *data_e
 	}
 
 	/*
-	 * Buffers must be 0-initialized in order to mitigate with extra histogram counts by fixing 0-bkt.
-	 */
-	memset(buf, 0, BKT*BUFFER_SIZE);
-
-	/*
 	 * Run kernel.
 	 */
 	{
+		const unsigned char *restrict data_rst = data;
+		unsigned char *restrict *restrict buf_points_rst = buf_points;
+		unsigned char *restrict *restrict copy_points_rst = copy_points;
 		const unsigned char *data_algn = data +
 			((((data_end - data) >> elem_size_log) % UNROLL_RELOCATE) << elem_size_log);
 		switch (elem_size_log) {
