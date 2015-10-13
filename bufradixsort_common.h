@@ -8,3 +8,4 @@
 #define UTYP_HELPER(bits) uint##bits##_t
 
 #define LOGUTYP(n) UTYP(MUL(POW(2, n), CHAR_BIT))
+#define SIZEUTYP(n) UTYP(MUL(n, BKT_BIT))

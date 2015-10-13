@@ -115,4 +115,8 @@
 #define ITERLISTARG_G(n, code_arg_len_list, rec) rec FST(FST(code_arg_len_list)) \
 	(INDEX(n, FST(SND(code_arg_len_list)), SND(SND(code_arg_len_list))), SND(FST(code_arg_len_list)));
 
+/* utils */
+#define CAT(x, y) CAT_HELPER(x, y)
+#define CAT_HELPER(x, y) x##y
+
 #endif /* BUFRADIXSORT_PP_H */
